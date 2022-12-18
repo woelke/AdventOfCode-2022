@@ -32,8 +32,6 @@ impl fmt::Debug for Valve {
     }
 }
 
-
-
 #[derive(Debug)]
 struct Valves(Vec<Valve>);
 
@@ -100,7 +98,10 @@ impl ValveRates {
                         .enumerate()
                         .filter_map(|(i, s)| match i {
                             1 => Some(s),
-                            4 => Some({let res = s.split_once("=").unwrap().1; res.get(..res.len()-1).unwrap() }),
+                            4 => Some({
+                                let res = s.split_once("=").unwrap().1;
+                                res.get(..res.len() - 1).unwrap()
+                            }),
                             _ => None,
                         })
                         .collect::<Vec<&str>>()
@@ -152,7 +153,7 @@ fn calc_optimal_route_impl(
     }
 
     if current_time >= max_time {
-        hist.update_current_flow(rates, max(current_time, max_time));
+        hist.update_current_flow(rates, max_time);
         return hist;
     }
 
@@ -166,7 +167,7 @@ fn calc_optimal_route_impl(
 
     let current_time = hist.actions.len() + 1;
     if current_time + 1 >= max_time {
-        hist.update_current_flow(rates, max(current_time, max_time));
+        hist.update_current_flow(rates, max_time);
         return hist;
     }
 
@@ -192,11 +193,70 @@ pub fn solve_a(loader: &DataLoader) -> Result<String, &str> {
     println!("Map={:?}\n", rates);
     let start_valve = Valve::from("AA");
     //let history = calc_optimal_route(&map, &rates, 30, &start_valve);
-    let history = calc_optimal_route(&map, &rates, 25, &start_valve);
+    let history = calc_optimal_route(&map, &rates, 12, &start_valve);
     println!("History={:?}\n", history);
+    println!(
+        "open order={:?}\n",
+        history
+            .actions
+            .iter()
+            .filter(|a| if let Action::Open(_) = a { true } else { false })
+            .cloned()
+            .collect::<Vec<Action>>()
+    );
+
     Ok(history.current_flow.to_string())
 }
 
 pub fn solve_b(loader: &DataLoader) -> Result<String, &str> {
     Err("xx")
+}
+
+#[cfg(test)]
+mod test_main {
+    use super::*;
+
+    #[test]
+    fn calc_origin() {
+        let loader = DataLoader::from_file("data/test_input.txt");
+        let rates = ValveRates::from(&loader);
+        let mut hist = History::new();
+
+        hist.opened_at_min.insert(Valve::from("DD"), 2);
+        hist.opened_at_min.insert(Valve::from("BB"), 5);
+        hist.opened_at_min.insert(Valve::from("JJ"), 9);
+        hist.opened_at_min.insert(Valve::from("HH"), 17);
+        hist.opened_at_min.insert(Valve::from("EE"), 21);
+        hist.opened_at_min.insert(Valve::from("CC"), 24);
+
+        hist.update_current_flow(&rates, 30);
+        assert_eq!(hist.current_flow, 1651);
+    }
+
+    #[test]
+    fn calc_first_try() {
+        let loader = DataLoader::from_file("data/test_input.txt");
+        let rates = ValveRates::from(&loader);
+        let mut hist = History::new();
+
+        hist.opened_at_min.insert(Valve::from("DD"), 2);
+        hist.opened_at_min.insert(Valve::from("BB"), 5);
+        hist.opened_at_min.insert(Valve::from("JJ"), 9);
+        hist.opened_at_min.insert(Valve::from("EE"), 14);
+        hist.opened_at_min.insert(Valve::from("HH"), 18);
+        hist.opened_at_min.insert(Valve::from("CC"), 24);
+
+        hist.update_current_flow(&rates, 30);
+        assert_eq!(hist.current_flow, 1650);
+    }
+
+    #[test]
+    fn calc_start() {
+        let loader = DataLoader::from_file("data/test_input.txt");
+        let map = CaveMap::from(&loader);
+        let rates = ValveRates::from(&loader);
+        let start_valve = Valve::from("AA");
+        let history = calc_optimal_route(&map, &rates, 3, &start_valve);
+        assert_eq!(history.current_flow, 20);
+    }
 }
