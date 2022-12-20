@@ -1,5 +1,4 @@
 use aoc_helpers::data_loader::DataLoader;
-use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -32,27 +31,27 @@ impl fmt::Debug for Valve {
     }
 }
 
-#[derive(Debug)]
-struct Valves(Vec<Valve>);
+#[derive(Debug, Clone)]
+struct ToValves(Vec<(Valve, usize)>);
 
-impl Valves {
-    fn from_line(line: &String) -> Valves {
-        Valves(
+impl ToValves {
+    fn from_line(line: &String) -> ToValves {
+        ToValves(
             line.split_once("; ")
                 .unwrap()
                 .1
                 .replace("s", "")
                 .replace("tunnel lead to valve ", "")
                 .split(',')
-                .map(|s| Valve::from(s.trim()))
-                .collect::<Vec<Valve>>(),
+                .map(|s| (Valve::from(s.trim()), 1))
+                .collect::<Vec<(Valve, usize)>>(),
         )
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 enum Action {
-    GoTo(Valve),
+    GoTo(Valve, usize),
     Open(Valve),
 }
 
@@ -83,6 +82,17 @@ impl History {
             })
             .sum::<u64>();
     }
+
+    fn get_current_time(&self) -> usize {
+        self.actions
+            .iter()
+            .map(|a| match a {
+                Action::GoTo(_, c) => *c,
+                Action::Open(_) => 1,
+            })
+            .sum::<usize>()
+            + 1
+    }
 }
 
 #[derive(Debug)]
@@ -107,23 +117,68 @@ impl ValveRates {
                         .collect::<Vec<&str>>()
                 })
                 .map(|v| (Valve::from(v[0]), v[1].parse::<u64>().unwrap()))
-                .filter(|(_, r)| r > &0)
                 .collect::<HashMap<Valve, u64>>(),
         )
     }
 }
 
-#[derive(Debug)]
-struct CaveMap(HashMap<Valve, Valves>);
+#[derive(Debug, Clone)]
+struct CaveMap(HashMap<Valve, ToValves>);
 
 impl CaveMap {
     fn from(loader: &DataLoader) -> CaveMap {
         CaveMap(
             loader
                 .iter()
-                .map(|line| (Valve::from_line(line), Valves::from_line(line)))
-                .collect::<HashMap<Valve, Valves>>(),
+                .map(|line| (Valve::from_line(line), ToValves::from_line(line)))
+                .collect::<HashMap<Valve, ToValves>>(),
         )
+    }
+
+    fn shrinked_map(&self, rates: &ValveRates) -> CaveMap {
+        let mut res = self.clone();
+        for useless_valve in rates.0.iter().filter_map(|(v, r)| {
+            if r == &0 && *v != Valve::from("AA") {
+                Some(v)
+            } else {
+                None
+            }
+        }) {
+            CaveMap::remove_useless_valve(&mut res, useless_valve);
+        }
+
+        res
+    }
+
+    fn remove_useless_valve(map: &mut CaveMap, valve: &Valve) {
+        let replacements = map
+            .0
+            .remove(valve)
+            .unwrap()
+            .0
+            .iter()
+            .filter(|(v, _)| v != valve)
+            .cloned()
+            .collect::<Vec<(Valve, usize)>>();
+
+        for (_, vs) in map.0.iter_mut() {
+            if let Some((idx, cost)) =
+                vs.0.iter()
+                    .enumerate()
+                    .find_map(|(i, (v, c))| if v == valve { Some((i, *c)) } else { None })
+            {
+                vs.0.remove(idx);
+                vs.0.extend(replacements.iter().map(|(v, c)| (*v, c + cost)));
+            }
+        }
+    }
+
+    fn removed_loopes(&self) -> CaveMap {
+        let mut res = self.clone();
+        for (v, vs) in res.0.iter_mut() {
+            vs.0.retain(|(w, _)| v != w);
+        }
+        res
     }
 }
 
@@ -144,42 +199,32 @@ fn calc_optimal_route_impl(
     last_history: &History,
 ) -> History {
     let mut hist = last_history.clone();
-    let current_time = hist.actions.len() + 1;
+    let current_time = hist.get_current_time();
 
-    // when all valves are open
-    if hist.opened_at_min.len() == rates.0.len() {
-        hist.update_current_flow(rates, max_time);
-        return hist;
-    }
-
-    if current_time >= max_time {
+    // when all valves are open or we are out of time
+    if hist.opened_at_min.len() == map.0.len() || current_time >= max_time {
         hist.update_current_flow(rates, max_time);
         return hist;
     }
 
     // open current valve
     if let None = hist.opened_at_min.get(current_pos) {
-        if rates.0.contains_key(current_pos) {
+        if rates.0.get(current_pos).unwrap() > &0 {
             hist.opened_at_min.insert(*current_pos, current_time);
             hist.actions.push(Action::Open(*current_pos));
         }
     }
 
-    let current_time = hist.actions.len() + 1;
-    if current_time + 1 >= max_time {
-        hist.update_current_flow(rates, max_time);
-        return hist;
-    }
-
+    //println!("current_pos={:?}", current_pos);
     // calc best result
     map.0
         .get(current_pos)
         .unwrap()
         .0
         .iter()
-        .map(|next_valve| {
+        .map(|(next_valve, cost)| {
             let mut tmp_hist = hist.clone();
-            tmp_hist.actions.push(Action::GoTo(*next_valve));
+            tmp_hist.actions.push(Action::GoTo(*next_valve, *cost));
             calc_optimal_route_impl(map, rates, max_time, next_valve, &tmp_hist)
         })
         .max_by(|ha, hb| ha.current_flow.cmp(&hb.current_flow))
@@ -191,9 +236,13 @@ pub fn solve_a(loader: &DataLoader) -> Result<String, &str> {
     println!("Map={:?}\n", map);
     let rates = ValveRates::from(loader);
     println!("Map={:?}\n", rates);
+    let shrinked_map = map.shrinked_map(&rates);
+    println!("shrinked map={:?}\n", shrinked_map);
+    let shrinked_map = shrinked_map.removed_loopes();
+    println!("no loop map={:?}\n", shrinked_map);
     let start_valve = Valve::from("AA");
     //let history = calc_optimal_route(&map, &rates, 30, &start_valve);
-    let history = calc_optimal_route(&map, &rates, 12, &start_valve);
+    let history = calc_optimal_route(&shrinked_map, &rates, 30, &start_valve);
     println!("History={:?}\n", history);
     println!(
         "open order={:?}\n",
@@ -206,10 +255,6 @@ pub fn solve_a(loader: &DataLoader) -> Result<String, &str> {
     );
 
     Ok(history.current_flow.to_string())
-}
-
-pub fn solve_b(loader: &DataLoader) -> Result<String, &str> {
-    Err("xx")
 }
 
 #[cfg(test)]
@@ -248,15 +293,5 @@ mod test_main {
 
         hist.update_current_flow(&rates, 30);
         assert_eq!(hist.current_flow, 1650);
-    }
-
-    #[test]
-    fn calc_start() {
-        let loader = DataLoader::from_file("data/test_input.txt");
-        let map = CaveMap::from(&loader);
-        let rates = ValveRates::from(&loader);
-        let start_valve = Valve::from("AA");
-        let history = calc_optimal_route(&map, &rates, 3, &start_valve);
-        assert_eq!(history.current_flow, 20);
     }
 }
