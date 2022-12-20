@@ -31,7 +31,6 @@ impl CircBuf {
         let mut res = self.clone();
 
         for origin_idx in 0..self.buf.len() {
-            //println!("{}/{}", origin_idx, self.buf.len());
             res.mix_idx(origin_idx);
         }
 
@@ -103,26 +102,15 @@ pub fn solve_b(loader: &DataLoader) -> Result<String, &str> {
     );
 
     let mut buf = salted_buf;
-    println!("{:?}\n", buf.view());
     for i in 1..=10 {
         let tmp_buf = buf.mixed_buf();
         buf = tmp_buf;
-        println!("after round {i}");
-        println!("{:?}\n", buf.view());
     }
 
     let mut res = 0;
     for nth in [1000, 2000, 3000] {
         let tmp = buf.nth_val_after_0(nth);
-        println!("tmp={}", tmp);
         res += tmp
     }
-
     Ok(res.to_string())
-
-//tmp=3761715724155
-//tmp=4783506467782
-//tmp=2308971140285
-    //2434767459
-    //811589153
 }
