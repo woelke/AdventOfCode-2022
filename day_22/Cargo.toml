@@ -1,0 +1,12 @@
+[package]
+name = "day_20"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aoc_helpers = { path = "../aoc_helpers"}
+itertools = "0.10.5"
+num-traits = "0.2.15"
+simple-matrix = "0.1.2"
